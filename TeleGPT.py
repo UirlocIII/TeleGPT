@@ -1,30 +1,75 @@
+import telebot
 import openai
-import sys
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
-from aiogram.utils import executor
-ALLOWED_USER_IDS = [TG-ID]
-token = 'TG-TOKEN'
-openai.api_key = 'OPENAI-TOKEN'
-bot = Bot(token)
-dp = Dispatcher(bot)
-@dp.message_handler()
-async def process_message(message: types.Message):
-    if message.from_user.id not in ALLOWED_USER_IDS:
-        await message.reply("?? ?? ????????? ?????????? ?????????????.")
-        return
-    response = openai.Completion.create(
-        model="text-davinci-003",
-        prompt=message.text,
-        temperature=0.5,
-        max_tokens=1024,
-        top_p=1,
-        frequency_penalty=0,
-        presence_penalty=0,
-        stop=[" Human:", " AI:"]
-    )
+import requests
+from io import BytesIO
+from PIL import Image
 
-    print(response['choices'][0]['text'])
-    await message.reply(response['choices'][0]['text'])
+# Задайте ваш OpenAI API ключ
+openai.api_key = "OpenAI API ключ"
+
+# Задайте ваш Telegram bot токен
+TOKEN = 'Telegram bot токен'
+
+# Создаем экземпляр бота
+bot = telebot.TeleBot(TOKEN)
+
+# Обработка команды /text
+@bot.message_handler(commands=['text'])
+def generate_text(message):
+    # Отправка сообщения пользователю
+    bot.send_message(message.chat.id, "Введите ваш вопрос:")
     
-executor.start_polling(dp, skip_updates=True)
+    # Создание функции для получения ответа от OpenAI GPT-3
+    @bot.message_handler(func=lambda message: True)
+    def generate_response(message):
+        # Получение ответа от OpenAI GPT-3
+        response = openai.Completion.create(
+          model="text-davinci-003",
+          prompt=message.text,
+          max_tokens=1024,
+          n=1,
+          stop=None,
+          temperature=0.5,
+        )
+        
+        # Отправка ответа пользователю
+        bot.send_message(message.chat.id, response.choices[0].text)
+    
+    # Регистрация функции для получения ответа от пользователя
+    bot.register_next_step_handler(message, generate_response)
+
+# Обработка команды /img
+@bot.message_handler(commands=['img'])
+def generate_image(message):
+    # Отправка сообщения пользователю
+    bot.send_message(message.chat.id, "Введите описание изображения:")
+    
+    # Создание функции для генерации изображения от OpenAI DALL-E
+    @bot.message_handler(func=lambda message: True)
+    def generate_response(message):
+        # Получение изображения от OpenAI DALL-E
+        image = requests.post("https://api.openai.com/v1/images/generations", 
+                              headers={
+                                  "Authorization": f"Bearer {openai.api_key}",
+                              },
+                              json={
+                                  "model": "image-alpha-001",
+                                  "prompt": message.text,
+                                  "num_images": 1,
+                                  "size": "512x512",
+                                  "response_format": "url"
+                              })
+        # Преобразование изображения в формат для отправки пользователю
+        img = Image.open(BytesIO(requests.get(image.json()['data'][0]['url']).content))
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        
+        # Отправка изображения пользователю
+        bot.send_photo(message.chat.id, photo=buffer)
+    
+    # Регистрация функции для получения описания изображения от пользователя
+    bot.register_next_step_handler(message, generate_response)
+
+# Запуск бота
+bot.polling()
